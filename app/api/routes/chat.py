@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from app.models.request_models import ChatRequest
@@ -13,51 +13,56 @@ from app.services.orchestration.chat_orchestrator import ChatOrchestrator
 
 router = APIRouter()
 
-# Simple dependency injection / singleton setup for Phase 5
-# In a full production app, this would be managed by a dependency injection container
-_orchestrator = None
+# Singleton orchestrator — initialized once on first request
+_orchestrator: ChatOrchestrator | None = None
 
-def get_orchestrator():
+
+def get_orchestrator() -> ChatOrchestrator:
+    """Returns the singleton ChatOrchestrator, initializing on first call."""
     global _orchestrator
     if _orchestrator is None:
         logger.info("Initializing ChatOrchestrator and sub-services...")
         llm = LLMService()
         embeddings = EmbeddingService()
         v_store = VectorStore()
-        v_store.load_index()
+        v_store.load_index()  # Graceful: returns False if not found, no crash
         k_engine = KeywordSearchEngine()
-        k_engine.load()
-        
+        k_engine.load()       # Graceful: returns False if not found, no crash
+
         retriever = HybridRetriever(v_store, k_engine, embeddings)
         context_builder = RetrievalContextBuilder()
-        
+
         _orchestrator = ChatOrchestrator(llm, retriever, context_builder)
+        logger.info("ChatOrchestrator ready.")
     return _orchestrator
 
 
 @router.post("", response_model=ChatResponse)
-async def chat_with_recommender(
-    request: ChatRequest, 
-    orchestrator: ChatOrchestrator = Depends(get_orchestrator)
-):
+async def chat_with_recommender(request: ChatRequest):
     """
-    Main entry point for conversational assessment recommendations.
-    Uses a multi-stage orchestration pipeline:
-    1. Intent Analysis
-    2. Grounded Retrieval
-    3. Decision Logic (Clarify vs Recommend)
-    4. Response Generation
+    POST /chat — Main entry point for conversational assessment recommendations.
+
+    Accepts the full stateless conversation history as a messages[] array:
+      { "messages": [{"role": "user", "content": "..."}, ...] }
+
+    Returns the agent's reply, structured recommendations, and end_of_conversation flag.
     """
-    logger.info(f"Received chat request: {request.message}")
-    
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="messages array cannot be empty")
+
+    # Validate at least one user message exists
+    user_msgs = [m for m in request.messages if m.role == "user"]
+    if not user_msgs:
+        raise HTTPException(status_code=400, detail="No user message found in messages array")
+
+    orchestrator = get_orchestrator()
+
     try:
         response = await orchestrator.handle_chat(request)
         return response
-        
     except Exception as e:
-        logger.error(f"Error in chat orchestration: {str(e)}")
-        # Log stack trace if possible in production
+        logger.error(f"Error in chat orchestration: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail="An unexpected error occurred while processing your request."
+            detail="An unexpected error occurred. Please try again."
         )

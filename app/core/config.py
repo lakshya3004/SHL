@@ -11,12 +11,14 @@ class Settings(BaseSettings):
     
     # API Configuration
     PROJECT_NAME: str = "SHL Assessment Recommender"
-    VERSION: str = "0.1.0"
+    VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = False
     
-    # LLM Configuration
-    # We use a generic OpenAI-compatible structure to allow flexibility in providers
+    # LLM Configuration — Gemini is the primary provider
+    GEMINI_API_KEY: str = ""
+    
+    # OpenAI-compatible fallback (Groq, OpenRouter, etc.)
     OPENAI_API_KEY: str = "placeholder"
     OPENAI_MODEL_NAME: str = "gpt-4-turbo-preview"
     LLM_BASE_URL: str = "https://api.openai.com/v1"
@@ -25,13 +27,17 @@ class Settings(BaseSettings):
     VECTOR_STORE_PATH: str = "./data/vectorstore"
     RAW_DATA_PATH: str = "./data/raw"
     PROCESSED_DATA_PATH: str = "./data/processed"
+    CATALOG_SEED_PATH: str = "./data/catalog_seed.json"
     
     # CORS Configuration
-    # For production, we would restrict these to specific domains
     BACKEND_CORS_ORIGINS: List[str] = ["*"]
 
     # Logging
     LOG_LEVEL: str = "INFO"
+    
+    # Conversation limits (hard evaluator constraints)
+    MAX_TURNS: int = 8
+    LLM_TIMEOUT_SECONDS: int = 20
 
     # Load from .env file if it exists
     model_config = SettingsConfigDict(

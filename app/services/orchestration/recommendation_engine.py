@@ -7,8 +7,8 @@ from app.models.retrieval_models import HybridSearchResult
 
 class RecommendationEngine:
     """
-    Decides if we should recommend yet and executes retrieval if so.
-    Ensures recommendation quality by enforcing context sufficiency.
+    Decides if we should recommend yet and executes retrieval.
+    Enforces minimum context requirements, builds rich queries for better Recall@10.
     """
 
     def __init__(self, retriever: HybridRetriever):
@@ -17,49 +17,70 @@ class RecommendationEngine:
     def evaluate_readiness(self, state: ConversationState) -> RecommendationDecision:
         """
         Determines if there is enough information to make a valid recommendation.
+        We are intentionally generous — any of (role, skills, hiring_goals) is enough.
         """
         reqs = state.requirements
-        
-        # Heuristic: We need a role OR specific skills to match
-        if not (reqs.role or reqs.skills):
+
+        if not (reqs.role or reqs.skills or reqs.hiring_goals):
             return RecommendationDecision(
                 should_recommend=False,
                 confidence_score=0.2,
                 clarification_questions=[
                     "What role or job title are you hiring for?",
-                    "What are the most critical skills you need to assess?"
+                    "What are the key skills or competencies you need to evaluate?"
                 ],
-                reasoning="Missing role and skill context."
+                reasoning="No role, skills, or hiring goals provided."
             )
-            
+
         return RecommendationDecision(
             should_recommend=True,
-            confidence_score=0.8,
-            reasoning="Sufficient context provided for a match."
+            confidence_score=0.85,
+            reasoning="Sufficient context: role/skills/goals available."
         )
 
-    async def get_candidates(self, state: ConversationState, k: int = 5) -> List[HybridSearchResult]:
+    async def get_candidates(self, state: ConversationState, k: int = 10) -> List[HybridSearchResult]:
         """
-        Executes hybrid search based on extracted requirements.
+        Builds a rich search query from conversation state and retrieves candidates.
+        Uses k=10 for maximum Recall@10 coverage.
         """
-        # Build search query from requirements
         query_parts = []
+
+        # Primary signals
         if state.requirements.role:
             query_parts.append(state.requirements.role)
+
         if state.requirements.seniority:
             query_parts.append(state.requirements.seniority)
-        
-        # Add skill keywords
+
+        # Skill signals — most important for retrieval quality
         query_parts.extend(state.requirements.skills)
-        
-        # Add preference keywords
-        query_parts.extend(state.requirements.test_type_preference)
-        
-        # Use recent query if it adds value
-        if state.intent == "refine":
+
+        # Hiring goal signals
+        query_parts.extend(state.requirements.hiring_goals)
+
+        # Test type preference signals
+        for pref in state.requirements.test_type_preference:
+            query_parts.append(pref)
+
+        # For refine intent, include the recent query verbatim for refinement signal
+        if state.intent in ("refine", "compare"):
             query_parts.append(state.recent_query)
-            
-        search_query = " ".join(query_parts)
-        
-        logger.info(f"Retrieving candidates for query: {search_query}")
-        return self.retriever.search(search_query, k=k)
+
+        # Fallback: use the raw query if we have nothing else
+        if not query_parts:
+            query_parts.append(state.recent_query)
+
+        # Deduplicate and clean
+        seen = set()
+        clean_parts = []
+        for p in query_parts:
+            if p and p.lower() not in seen:
+                seen.add(p.lower())
+                clean_parts.append(p)
+
+        search_query = " ".join(clean_parts)
+        logger.info(f"Retrieval query: '{search_query}' | intent={state.intent}")
+
+        results = self.retriever.search(search_query, k=k)
+        logger.info(f"Retrieved {len(results)} candidates.")
+        return results

@@ -1,33 +1,39 @@
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class ChatMessage(BaseModel):
     """
-    Represents a single message in the conversation.
+    Represents a single message in the conversation history.
+    Matches the evaluator's expected format exactly.
     """
-    role: str = Field(..., description="The role of the message sender (user or assistant)")
+    role: str = Field(..., description="The role: 'user' or 'assistant'")
     content: str = Field(..., description="The text content of the message")
 
 
 class ChatRequest(BaseModel):
     """
-    Request schema for the chat endpoint.
-    Stateless, so it should ideally receive the conversation history or relevant context.
-    """
-    message: str = Field(..., description="The latest user message")
-    history: List[ChatMessage] = Field(default_factory=list, description="Previous messages in the conversation")
+    Request schema for POST /chat — stateless, full conversation history.
     
-    # Optional fields for future use cases
-    session_id: Optional[str] = Field(None, description="Unique identifier for the session")
-    metadata: Optional[dict] = Field(default_factory=dict, description="Additional context or metadata")
+    IMPORTANT: This matches the evaluator's specification exactly:
+      { "messages": [{"role": "user", "content": "..."}, ...] }
+    
+    The last message with role='user' is treated as the latest input.
+    """
+    messages: List[ChatMessage] = Field(
+        ...,
+        description="Full conversation history including the latest user message",
+        min_length=1
+    )
 
     model_config = {
         "json_schema_extra": {
             "example": {
-                "message": "I need a test for logical reasoning in a corporate setting.",
-                "history": [],
-                "session_id": "sess_12345"
+                "messages": [
+                    {"role": "user", "content": "Hiring a Java developer who works with stakeholders"},
+                    {"role": "assistant", "content": "Sure. What is seniority level?"},
+                    {"role": "user", "content": "Mid-level, around 4 years"}
+                ]
             }
         }
     }

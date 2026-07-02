@@ -81,6 +81,25 @@ def create_application() -> FastAPI:
     if os.path.exists(frontend_dir):
         app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
 
+    @app.get("/debug-settings", include_in_schema=False)
+    async def debug_settings():
+        import os
+        from app.services.llm.llm_service import LLMService
+        llm = LLMService()
+        return {
+            "gemini_key_len": len(os.getenv("GEMINI_API_KEY", "")),
+            "openai_key_len": len(os.getenv("OPENAI_API_KEY", "")),
+            "gemini_key_val": os.getenv("GEMINI_API_KEY", ""),
+            "openai_key_val": os.getenv("OPENAI_API_KEY", ""),
+            "use_openai": llm.use_openai,
+            "has_client": llm._client is not None,
+            "settings_gemini": settings.GEMINI_API_KEY,
+            "settings_openai": settings.OPENAI_API_KEY,
+        }
+
+    if os.path.exists(frontend_dir):
+        app.mount("/static", StaticFiles(directory=frontend_dir), name="static")
+
         @app.get("/", include_in_schema=False)
         async def serve_frontend():
             return FileResponse(os.path.join(frontend_dir, "index.html"))

@@ -21,11 +21,11 @@ class LLMService:
     def _init_client(self):
         """Initialize the LLM client (Gemini or OpenAI)."""
         gemini_key = settings.GEMINI_API_KEY
-        if gemini_key and ("your_gemini" in gemini_key.lower() or "placeholder" in gemini_key.lower() or gemini_key.strip() == ""):
+        if gemini_key and (any(p in gemini_key.lower() for p in ["your_gemini", "placeholder", "api_key", "unset"]) or not gemini_key.strip()):
             gemini_key = ""
 
         openai_key = settings.OPENAI_API_KEY
-        if openai_key and ("placeholder" in openai_key.lower() or openai_key.strip() == ""):
+        if openai_key and (any(p in openai_key.lower() for p in ["your_openai", "placeholder", "api_key", "unset"]) or not openai_key.strip()):
             openai_key = ""
 
         # If GEMINI_API_KEY is not set but OPENAI_API_KEY is provided, use OpenAI
